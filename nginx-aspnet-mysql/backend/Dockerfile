@@ -1,42 +1,35 @@
-# syntax=docker/dockerfile:1.4
-
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:6.0 AS base
 
 WORKDIR /src
 
 COPY aspnetapp.csproj ./
-RUN ["dotnet", "restore"]
+RUN dotnet restore
 
-FROM base as builder
+FROM base AS builder
 
 COPY . .
+RUN dotnet build -c Release -o /build
 
-CMD ["dotnet", "build", "-c", "-o", "/build"]
+FROM builder AS dev-envs
 
-FROM builder as dev-envs
+RUN apt-get update && apt-get install -y git
 
-RUN <<EOF
-apt-get update
-apt-get install -y git
-EOF
+RUN useradd -s /bin/bash -m vscode && \
+    groupadd docker && \
+    usermod -aG docker vscode
 
-RUN <<EOF
-useradd -s /bin/bash -m vscode
-groupadd docker
-usermod -aG docker vscode
-EOF
-# install Docker tools (cli, buildx, compose)
-COPY --from=gloursdocker/docker / /
-
-CMD ["dotnet", "run"]
+# install Docker tools (ONLY if really needed)
+# (remove if not required)
+# COPY --from=gloursdocker/docker / /
 
 FROM builder AS publisher
 
-RUN ["dotnet", "publish", "-c", "Release", "-o", "/build"]
+RUN dotnet publish -c Release -o /build
 
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/aspnet:6.0
+FROM mcr.microsoft.com/dotnet/aspnet:6.0
 
 WORKDIR /app
+
 COPY --from=publisher /build .
 
 CMD ["dotnet", "aspnetapp.dll"]
